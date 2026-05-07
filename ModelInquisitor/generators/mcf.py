@@ -13,6 +13,8 @@ class MCFGenerator:
             return self._deadlock_formula(claim, model)
         if claim.kind == ClaimKind.ACTION_PRESERVATION:
             return self._action_preservation_formula(claim, model)
+        if claim.kind == ClaimKind.MESSAGE_SYNCHRONIZATION:
+            return self._message_synchronization_formula(claim, model)
         if claim.kind == ClaimKind.CAUSALITY:
             return self._causality_formula(claim, model)
         if claim.kind == ClaimKind.MUTEX:
@@ -42,6 +44,24 @@ class MCFGenerator:
             f"% {claim.description}\n"
             f"% The translated model should still be able to observe this BPMN action.\n"
             f"<true*>({self._modal(action)})"
+        )
+
+    def _message_synchronization_formula(self, claim: Claim, model: BPMNModel) -> str:
+        message_flow_id = claim.metadata.get("message_flow_id") or claim.node_id
+        message_flow = next(
+            (flow for flow in model.message_flows if flow.id == message_flow_id),
+            None,
+        )
+        if message_flow is None:
+            return "% Message synchronization claim has an unknown message flow.\nfalse"
+
+        send, receive, communicated = self.strategy.message_actions(message_flow)
+        return (
+            f"% {claim.description}\n"
+            f"% The message must be observable as a synchronized communication, not as raw send/receive actions.\n"
+            f"<true*>({self._modal(communicated)}) &&\n"
+            f"[true* . ({self._action_formula(send)})]false &&\n"
+            f"[true* . ({self._action_formula(receive)})]false"
         )
 
     def _causality_formula(self, claim: Claim, model: BPMNModel) -> str:

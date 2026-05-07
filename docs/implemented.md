@@ -64,24 +64,21 @@ BPMN 解析器位于 `ModelInquisitor/parsers/bpmn.py`。
 
 Claim 提取由 `ModelInquisitor/extractors/__init__.py` 统一组织。
 
-目前已经实现四类 Claim。
+目前已经实现五类 Claim。
 
 #### 死锁自由近似检查
 
 实现位于 `ModelInquisitor/extractors/deadlock.py`。
 
-该提取器会为每个 BPMN 流程生成一个 Claim，要求该流程应当能够到达某个
-end event。
+该提取器会为每个 BPMN 流程生成一个 Claim，要求该流程应当能够到达某个end event。
 
-需要注意的是，当前语义是有意采用的近似版本：生成的公式检查的是 end event
-可达性，而不是严格意义上的全路径死锁自由性质。
+需要注意的是，当前语义是有意采用的近似版本：生成的公式检查的是 end event可达性，而不是严格意义上的全路径死锁自由性质。
 
 #### Action Preservation 检查
 
 实现位于 `ModelInquisitor/extractors/action_preservation.py`。
 
-该提取器会为每个 BPMN 可观察节点生成一个 Claim，要求该节点在转译后的 mCRL2
-模型中仍然可以作为可达 action 被观察到。
+该提取器会为每个 BPMN 可观察节点生成一个 Claim，要求该节点在转译后的 mCRL2模型中仍然可以作为可达 action 被观察到。
 
 当前覆盖范围包括：
 
@@ -98,15 +95,35 @@ end event。
 <true*>(<exists oid: OrderId. action(oid)>true)
 ```
 
-这类 Claim 主要用于检查转译完整性：如果 BPMN 中的关键业务动作在 mCRL2 中
-消失、命名错误或不可达，验证会失败。
+这类 Claim 主要用于检查转译完整性：如果 BPMN 中的关键业务动作在 mCRL2 中消失、命名错误或不可达，验证会失败。
+
+#### Message Synchronization 检查
+
+实现位于 `ModelInquisitor/extractors/message_synchronization.py`。
+
+该提取器会为每条 BPMN `messageFlow` 生成一个 Claim，要求该消息在 mCRL2模型中表现为同步后的 communicated action，而不是裸露的 send/receive action。
+
+对一条 message flow，命名策略会推导：
+
+- send action：`s_msg`；
+- receive action：`r_msg`；
+- communicated action：`c_msg`。
+
+生成的公式同时检查：
+
+```text
+<true*>(<exists oid: OrderId. c_msg(oid)>true)
+[true* . (exists oid: OrderId. s_msg(oid))]false
+[true* . (exists oid: OrderId. r_msg(oid))]false
+```
+
+这类 Claim 用于发现通信同步规则缺失、`comm` 配置错误，或原始 send/receive动作意外暴露等问题。
 
 #### 因果依赖检查
 
 实现位于 `ModelInquisitor/extractors/causality.py`。
 
-该提取器会对每个流程计算支配节点关系。如果一个可观察源节点支配另一个
-可观察目标节点，就生成一个 Claim，表示目标节点不能在源节点之前发生。
+该提取器会对每个流程计算支配节点关系。如果一个可观察源节点支配另一个可观察目标节点，就生成一个 Claim，表示目标节点不能在源节点之前发生。
 
 这可以捕获直线流程或结构化流程区域中的必要前驱关系。
 
@@ -114,8 +131,7 @@ end event。
 
 实现位于 `ModelInquisitor/extractors/mutex.py`。
 
-对于拥有多条输出分支的 exclusive gateway，该提取器会查找每条分支中的首个
-可观察动作，并生成两两互斥的 Claims。
+对于拥有多条输出分支的 exclusive gateway，该提取器会查找每条分支中的首个可观察动作，并生成两两互斥的 Claims。
 
 生成的性质用于检查同一次执行 trace 中不应同时出现两个排他分支动作。
 
@@ -143,6 +159,7 @@ end event。
 
 - 死锁自由近似：检查 end event 动作是否可达；
 - Action Preservation：检查 BPMN 可观察节点对应 action 是否可达；
+- Message Synchronization：检查 message flow 是否同步为 communicated action；
 - 因果依赖：检查目标动作不能在源动作之前发生；
 - 互斥排他：检查两个分支动作的两种先后顺序都不允许出现。
 
@@ -158,8 +175,7 @@ end event。
 mcrl22lps -> lps2pbes -> pbes2bool
 ```
 
-对每个生成的 Claim 公式，runner 会写出 `.mcf` 文件，将其转换为 PBES，
-再求解 PBES，并报告该 Claim 是否通过。
+对每个生成的 Claim 公式，runner 会写出 `.mcf` 文件，将其转换为 PBES，再求解 PBES，并报告该 Claim 是否通过。
 
 如果 mCRL2 命令行工具不在 `PATH` 中，runner 会将每个 Claim 标记为
 `not_run`。
@@ -225,13 +241,14 @@ CLI 会输出：
 观测结果：
 
 ```text
-16 个 Claims 全部通过
+19 个 Claims 全部通过
 ```
 
 通过的 Claims 包括：
 
 - 2 个死锁自由近似 Claims；
 - 8 个 Action Preservation Claims；
+- 3 个 Message Synchronization Claims；
 - 6 个因果依赖 Claims。
 
 当前样例没有生成 mutex Claim，因为输入 BPMN 中没有符合当前提取器模式的

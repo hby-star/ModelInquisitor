@@ -8,6 +8,7 @@ from typing import Any
 class ClaimKind(str, Enum):
     DEADLOCK_FREEDOM = "deadlock_freedom"
     ACTION_PRESERVATION = "action_preservation"
+    MESSAGE_SYNCHRONIZATION = "message_synchronization"
     CAUSALITY = "causality"
     MUTEX = "mutex"
 
